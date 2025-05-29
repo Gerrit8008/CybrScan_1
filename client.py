@@ -36,6 +36,40 @@ client_bp = Blueprint('client', __name__, url_prefix='/client')
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+
+def get_client_total_scans(client_id):
+    """Get total number of scans used by a client in the current billing period"""
+    try:
+        # Connect to database
+        from client_db import get_db_connection
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # First try to query the scan_history table
+        try:
+            cursor.execute(
+                "SELECT COUNT(*) FROM scan_history WHERE client_id = ?", 
+                (client_id,)
+            )
+            total_scans = cursor.fetchone()[0]
+        except:
+            # If scan_history table doesn't exist or doesn't have client_id column
+            # try the scans table
+            try:
+                cursor.execute(
+                    "SELECT COUNT(*) FROM scans WHERE client_id = ?", 
+                    (client_id,)
+                )
+                total_scans = cursor.fetchone()[0]
+            except:
+                total_scans = 0
+        
+        conn.close()
+        return total_scans
+    except Exception as e:
+        logger.error(f"Error getting client total scans for client {client_id}: {e}")
+        return 0
+
 # Remove duplicate imports and blueprint definition
 
 # Middleware to require client login with role check
@@ -362,6 +396,9 @@ def scanners(user):
             pagination = {'page': 1, 'per_page': 10, 'total_pages': 1, 'total_count': 0}
         
         # Add scan usage information
+        # Import subscription constants
+        from subscription_constants import get_client_scan_limit, get_client_scanner_limit
+        
         scans_used = get_client_total_scans(client['id']) if client else 0
         scans_limit = get_client_scan_limit(client) if client else 50
         scanner_limit = get_client_scanner_limit(client) if client else 1
@@ -1198,6 +1235,24 @@ def scanner_create(user):
             flash('Please complete your profile first', 'warning')
             return redirect(url_for('client.profile'))
         
+        # Check scanner limits based on subscription
+        from client_db import get_db_connection
+        from subscription_constants import get_client_scanner_limit
+        
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute('SELECT COUNT(*) FROM scanners WHERE client_id = ? AND status != "deleted"', (client['id'],))
+        current_scanners = cursor.fetchone()[0]
+        conn.close()
+        
+        # Get scanner limit based on client's subscription level
+        scanner_limit = get_client_scanner_limit(client)
+        
+        # If at limit, redirect to upgrade page
+        if current_scanners >= scanner_limit:
+            flash(f'Scanner limit reached ({current_scanners}/{scanner_limit}). Please upgrade your subscription to create more scanners.', 'warning')
+            return redirect(url_for('client.scanners'))
+        
         if request.method == 'POST':
             # Get form data
             scanner_data = {
@@ -1240,7 +1295,9 @@ def scanner_create(user):
         # GET request - show creation form
         return render_template('client/scanner-create.html', 
                              user=user, 
-                             client=client)
+                             client=client,
+                             current_scanners=current_scanners,
+                             scanner_limit=scanner_limit)
         
     except Exception as e:
         logger.error(f"Error creating scanner: {str(e)}")
