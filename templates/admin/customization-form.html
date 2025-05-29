@@ -618,9 +618,14 @@
                                     <button type="button" class="btn btn-secondary me-2" id="prev5">
                                         <i class="bi bi-arrow-left me-1"></i> Previous
                                     </button>
-                                    <button type="submit" class="btn btn-success btn-lg" id="finalSubmit">
-                                        <i class="bi bi-check-circle me-2"></i>Create Scanner
+                                    <button type="submit" class="btn btn-success btn-lg" id="finalSubmit" {% if current_scanners is defined and scanner_limit is defined and current_scanners >= scanner_limit %}disabled{% endif %}>
+                                        <i class="bi bi-check-circle me-2"></i>{% if current_scanners is defined and scanner_limit is defined and current_scanners >= scanner_limit %}Scanner Limit Reached{% else %}Create Scanner{% endif %}
                                     </button>
+                                    {% if current_scanners is defined and scanner_limit is defined and current_scanners >= scanner_limit %}
+                                    <a href="/client/upgrade" class="btn btn-warning btn-lg ms-2">
+                                        <i class="bi bi-arrow-up-circle me-2"></i>Upgrade Plan
+                                    </a>
+                                    {% endif %}
                                 </div>
                             </div>
                         </form>

@@ -1171,6 +1171,48 @@ def customize_scanner():
     
     # For GET requests, render the template
     logging.info("Rendering customization form")
+    
+    # Get client information for subscription checks
+    try:
+        # Get user information from session
+        session_token = session.get('session_token')
+        if session_token:
+            # Import user functions
+            from user_db_functions import get_user_from_session
+            user = get_user_from_session(session_token)
+            
+            if user:
+                # Get client information
+                from client_db import get_client_by_user_id
+                client = get_client_by_user_id(user['id'])
+                
+                if client:
+                    # Import subscription constants
+                    from subscription_constants import get_client_scanner_limit
+                    
+                    # Get current scanner count
+                    conn = get_db_connection()
+                    cursor = conn.cursor()
+                    cursor.execute('SELECT COUNT(*) FROM scanners WHERE client_id = ? AND status != "deleted"', (client['id'],))
+                    current_scanners = cursor.fetchone()[0]
+                    conn.close()
+                    
+                    # Get scanner limit based on subscription level
+                    scanner_limit = get_client_scanner_limit(client)
+                    
+                    # Check if client has reached their scanner limit
+                    if current_scanners >= scanner_limit:
+                        flash(f'Scanner limit reached ({current_scanners}/{scanner_limit}). Please upgrade your subscription to create more scanners.', 'warning')
+                    
+                    return render_template('admin/customization-form.html',
+                                         client=client,
+                                         current_scanners=current_scanners,
+                                         scanner_limit=scanner_limit,
+                                         subscription_level=client.get('subscription_level', 'basic'))
+    except Exception as e:
+        logging.error(f"Error getting subscription information: {e}")
+    
+    # Default rendering if we couldn't get subscription info
     return render_template('admin/customization-form.html')
 
 @app.route('/scanner/<scanner_uid>/info')
