@@ -5,6 +5,12 @@ Subscription Constants
 This file defines the subscription levels and their features.
 """
 
+# Legacy plan mapping
+LEGACY_PLAN_MAPPING = {
+    'business': 'professional',
+    'pro': 'professional'
+}
+
 # Subscription level definitions
 SUBSCRIPTION_LEVELS = {
     'basic': {
@@ -106,3 +112,33 @@ def get_subscription_price(level):
     if level not in SUBSCRIPTION_LEVELS:
         level = 'basic'  # Default to basic if level not found
     return SUBSCRIPTION_LEVELS[level]['price']
+
+
+def get_client_subscription_level(client):
+    """Get normalized subscription level for a client"""
+    if not client:
+        return 'basic'  # Default to basic
+    
+    subscription_level = client.get('subscription_level', 'basic').lower()
+    
+    # Handle legacy plan names
+    if subscription_level in LEGACY_PLAN_MAPPING:
+        subscription_level = LEGACY_PLAN_MAPPING[subscription_level]
+    
+    # Ensure subscription_level exists in SUBSCRIPTION_LEVELS
+    if subscription_level not in SUBSCRIPTION_LEVELS:
+        subscription_level = 'basic'
+    
+    return subscription_level
+
+
+def get_client_scanner_limit(client):
+    """Get scanner limit based on client's subscription level"""
+    subscription_level = get_client_subscription_level(client)
+    return SUBSCRIPTION_LEVELS[subscription_level]['features']['scanners']
+
+
+def get_client_scan_limit(client):
+    """Get scan limit based on client's subscription level"""
+    subscription_level = get_client_subscription_level(client)
+    return SUBSCRIPTION_LEVELS[subscription_level]['features']['scans_per_month']
