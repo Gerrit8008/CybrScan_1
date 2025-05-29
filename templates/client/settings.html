@@ -260,16 +260,40 @@
                                 </div>
                                 
                                 <div class="row">
-                                    <div class="col-md-4">
+                                    <div class="col-md-3">
                                         <div class="card h-100">
                                             <div class="card-header text-center">
-                                                <h5>Starter</h5>
-                                                <h4 class="text-primary">$99<span class="text-muted">/month</span></h4>
+                                                <h5>Basic</h5>
+                                                <h4 class="text-primary">$0<span class="text-muted">/month</span></h4>
                                             </div>
                                             <div class="card-body">
                                                 <ul class="feature-list">
-                                                    <li>Up to 25 client accounts</li>
-                                                    <li>100 scans per month</li>
+                                                    <li>1 scanner</li>
+                                                    <li>10 scans per month</li>
+                                                    <li>Basic branding</li>
+                                                    <li>Email reports</li>
+                                                    <li>Community support</li>
+                                                </ul>
+                                                <div class="text-center mt-3">
+                                                    {% if client.subscription_level == 'basic' or not client.subscription_level %}
+                                                        <button class="btn btn-outline-success" disabled>Current Plan</button>
+                                                    {% else %}
+                                                        <a href="/client/billing/downgrade?plan=basic" class="btn btn-outline-secondary">Downgrade</a>
+                                                    {% endif %}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <div class="card h-100">
+                                            <div class="card-header text-center">
+                                                <h5>Starter</h5>
+                                                <h4 class="text-primary">$59<span class="text-muted">/month</span></h4>
+                                            </div>
+                                            <div class="card-body">
+                                                <ul class="feature-list">
+                                                    <li>1 scanner</li>
+                                                    <li>50 scans per month</li>
                                                     <li>White-label branding</li>
                                                     <li>Basic reporting</li>
                                                     <li>Email support</li>
@@ -286,16 +310,16 @@
                                             </div>
                                         </div>
                                     </div>
-                                    <div class="col-md-4">
+                                    <div class="col-md-3">
                                         <div class="card h-100 border-primary">
                                             <div class="card-header text-center bg-primary text-white">
                                                 <h5>Professional</h5>
-                                                <h4>$249<span class="text-light">/month</span></h4>
+                                                <h4>$99<span class="text-light">/month</span></h4>
                                                 <small class="badge bg-warning text-dark">Most Popular</small>
                                             </div>
                                             <div class="card-body">
                                                 <ul class="feature-list">
-                                                    <li>Up to 100 client accounts</li>
+                                                    <li>3 scanners</li>
                                                     <li>500 scans per month</li>
                                                     <li>Advanced white-labeling</li>
                                                     <li>Professional reporting</li>
@@ -315,16 +339,16 @@
                                             </div>
                                         </div>
                                     </div>
-                                    <div class="col-md-4">
+                                    <div class="col-md-3">
                                         <div class="card h-100">
                                             <div class="card-header text-center">
                                                 <h5>Enterprise</h5>
-                                                <h4 class="text-primary">$499<span class="text-muted">/month</span></h4>
+                                                <h4 class="text-primary">$149<span class="text-muted">/month</span></h4>
                                             </div>
                                             <div class="card-body">
                                                 <ul class="feature-list">
-                                                    <li>Unlimited client accounts</li>
-                                                    <li>Unlimited scans</li>
+                                                    <li>10 scanners</li>
+                                                    <li>1000 scans per month</li>
                                                     <li>Complete white-labeling</li>
                                                     <li>Executive reporting</li>
                                                     <li>24/7 dedicated support</li>
