@@ -2,7 +2,6 @@ from flask import Blueprint, render_template, request, redirect, url_for, flash,
 import os
 import logging
 import json
-import time
 from datetime import datetime
 from functools import wraps
 
@@ -74,52 +73,6 @@ def client_required(f):
         return f(*args, **kwargs)
     
     return decorated_function
-
-def get_client_total_scans(client_id):
-    """Get total number of scans used by a client in the current billing period"""
-    try:
-        from client_database_manager import get_client_scan_statistics
-        stats = get_client_scan_statistics(client_id)
-        return stats.get('total_scans', 0)
-    except Exception as e:
-        logger.error(f"Error getting client total scans: {e}")
-        return 0
-
-def get_client_scan_limit(client):
-    """Get scan limit based on client's subscription level"""
-    if not client:
-        return 50  # Default starter plan
-    
-    subscription_level = client.get('subscription_level', 'starter').lower()
-    
-    # Define plan limits
-    plan_limits = {
-        'starter': 50,
-        'basic': 100,
-        'professional': 250,
-        'business': 500,
-        'enterprise': 1000
-    }
-    
-    return plan_limits.get(subscription_level, 50)
-
-def get_client_scanner_limit(client):
-    """Get scanner limit based on client's subscription level"""
-    if not client:
-        return 1  # Default starter plan
-    
-    subscription_level = client.get('subscription_level', 'starter').lower()
-    
-    # Define scanner limits
-    scanner_limits = {
-        'starter': 1,
-        'basic': 3,
-        'professional': 5,
-        'business': 10,
-        'enterprise': 25
-    }
-    
-    return scanner_limits.get(subscription_level, 1)
 
 @client_bp.route('/dashboard')
 @client_required
@@ -223,18 +176,10 @@ def dashboard(user):
         else:
             logger.warning("   ❌ No scan history to display!")
         
-        # Get client data
-        client_data = dashboard_data['client']
-        
-        # Calculate actual scanner count
-        actual_scanners = client_scanners if client_scanners else dashboard_data.get('scanners', [])
-        stats['scanners_count'] = len(actual_scanners)  # Add the missing scanners_count to stats
-        
         template_vars = {
             'user': user,
-            'client': client_data,
-            'user_client': client_data,
-            'stats': stats,  # Add the missing stats variable
+            'client': dashboard_data['client'],
+            'user_client': dashboard_data['client'],
             'scanners': client_scanners if client_scanners else dashboard_data.get('scanners', []),
             'scan_history': scan_history,
             'total_scans': stats.get('total_scans', 0),
@@ -253,9 +198,9 @@ def dashboard(user):
             'high_issues': stats.get('high_issues', 0),
             'medium_issues': stats.get('medium_issues', 0),
             'recommendations': [],  # Default empty recommendations
-            'scans_used': get_client_total_scans(client_data['id']) if client_data else 0,  # Get actual scans used
-            'scans_limit': get_client_scan_limit(client_data) if client_data else 50,  # Get client's scan limit based on plan
-            'scanner_limit': get_client_scanner_limit(client_data) if client_data else 1  # Get client's scanner limit based on plan
+            'scans_used': 0,  # Default scans used
+            'scans_limit': 50,  # Default scans limit
+            'scanner_limit': 1  # Default scanner limit
         }
         
         # IMPORTANT: Ensure the correct URL for the "Create New Scanner" button
@@ -273,9 +218,7 @@ def dashboard(user):
         return render_template('client/client-dashboard.html', 
                               user=user, 
                               error=str(e),
-                              client={},  # Add missing client variable
                               user_client={},
-                              stats={},  # Add missing stats variable
                               scanners=[],
                               scan_history=[],
                               total_scans=0,
@@ -315,10 +258,7 @@ def scanners(user):
                 },
                 scanners=[],
                 pagination={'page': 1, 'per_page': 10, 'total_pages': 1, 'total_count': 0},
-                filters={},
-                scans_used=0,
-                scans_limit=50,
-                scanner_limit=1
+                filters={}
             )
         
         # Get pagination parameters
@@ -361,21 +301,13 @@ def scanners(user):
             paginated_scanners = []
             pagination = {'page': 1, 'per_page': 10, 'total_pages': 1, 'total_count': 0}
         
-        # Add scan usage information
-        scans_used = get_client_total_scans(client['id']) if client else 0
-        scans_limit = get_client_scan_limit(client) if client else 50
-        scanner_limit = get_client_scanner_limit(client) if client else 1
-        
         return render_template(
             'client/scanners.html',
             user=user,
             client=client,
             scanners=paginated_scanners,
             pagination=pagination,
-            filters=filters,
-            scans_used=scans_used,
-            scans_limit=scans_limit,
-            scanner_limit=scanner_limit
+            filters=filters
         )
     except Exception as e:
         logger.error(f"Error displaying client scanners: {str(e)}")
@@ -510,85 +442,30 @@ def scanner_edit(user, scanner_id):
                 'contact_phone': request.form.get('contact_phone'),
                 'primary_color': request.form.get('primary_color'),
                 'secondary_color': request.form.get('secondary_color'),
-                'button_color': request.form.get('button_color'),
                 'email_subject': request.form.get('email_subject'),
                 'email_intro': request.form.get('email_intro'),
-                'scanner_description': request.form.get('scanner_description'),
-                'cta_button_text': request.form.get('cta_button_text'),
-                'company_tagline': request.form.get('company_tagline'),
-                'support_email': request.form.get('support_email'),
-                'custom_footer_text': request.form.get('custom_footer_text'),
                 'default_scans': request.form.getlist('default_scans[]')
             }
             
-            
             # Handle file uploads
-            if 'logo_upload' in request.files and request.files['logo_upload'].filename:
-                logo_file = request.files['logo_upload']
-                try:
-                    # Save logo file
-                    from werkzeug.utils import secure_filename
-                    
-                    # Create upload directory if it doesn't exist
-                    upload_dir = os.path.join('static', 'uploads')
-                    os.makedirs(upload_dir, exist_ok=True)
-                    
-                    # Generate unique filename
-                    filename = secure_filename(logo_file.filename)
-                    unique_filename = f"logo_{int(time.time())}_{filename}"
-                    file_path = os.path.join(upload_dir, unique_filename)
-                    
-                    # Save file
-                    logo_file.save(file_path)
-                    scanner_data['logo_path'] = f"/static/uploads/{unique_filename}"
-                    
-                    # Also update the scanner variable for immediate display
-                    scanner['logo_path'] = scanner_data['logo_path']
-                    
-                except Exception as e:
-                    print(f"Error saving logo: {e}")
+            if 'logo' in request.files and request.files['logo'].filename:
+                logo_file = request.files['logo']
+                # TODO: Implement file handling
+                # scanner_data['logo_path'] = save_uploaded_file(logo_file)
             
-            if 'favicon_upload' in request.files and request.files['favicon_upload'].filename:
-                favicon_file = request.files['favicon_upload']
-                try:
-                    # Save favicon file
-                    from werkzeug.utils import secure_filename
-                    
-                    # Create upload directory if it doesn't exist
-                    upload_dir = os.path.join('static', 'uploads')
-                    os.makedirs(upload_dir, exist_ok=True)
-                    
-                    # Generate unique filename
-                    filename = secure_filename(favicon_file.filename)
-                    unique_filename = f"favicon_{int(time.time())}_{filename}"
-                    file_path = os.path.join(upload_dir, unique_filename)
-                    
-                    # Save file
-                    favicon_file.save(file_path)
-                    scanner_data['favicon_path'] = f"/static/uploads/{unique_filename}"
-                    
-                    # Also update the scanner variable for immediate display
-                    scanner['favicon_path'] = scanner_data['favicon_path']
-                    
-                except Exception as e:
-                    print(f"Error saving favicon: {e}")
+            if 'favicon' in request.files and request.files['favicon'].filename:
+                favicon_file = request.files['favicon']
+                # TODO: Implement file handling
+                # scanner_data['favicon_path'] = save_uploaded_file(favicon_file)
             
             # Update scanner
-            try:
-                result = update_scanner_config(scanner_id, scanner_data, user['user_id'])
-                
-                if result and result.get('status') == 'success':
-                    flash('Scanner updated successfully!', 'success')
-                    return redirect(url_for('client.scanners'))
-                else:
-                    error_msg = result.get('message', 'Unknown error') if result else 'No result returned'
-                    flash(f'Failed to update scanner: {error_msg}', 'danger')
-                    # If update failed, reload scanner data to show current state
-                    scanner = get_scanner_by_id(scanner_id)
-            except Exception as e:
-                flash(f'Error updating scanner: {str(e)}', 'danger')
-                # If exception, reload scanner data to show current state
-                scanner = get_scanner_by_id(scanner_id)
+            result = update_scanner_config(scanner_id, scanner_data, user['user_id'])
+            
+            if result['status'] == 'success':
+                flash('Scanner updated successfully', 'success')
+                return redirect(url_for('client.scanner_view', scanner_id=scanner_id))
+            else:
+                flash(f'Failed to update scanner: {result.get("message", "Unknown error")}', 'danger')
         
         return render_template(
             'client/scanner-edit.html',
@@ -604,7 +481,7 @@ def scanner_edit(user, scanner_id):
 @client_bp.route('/scanners/<int:scanner_id>/stats')
 @client_required
 def scanner_stats(user, scanner_id):
-    """View comprehensive scanner statistics"""
+    """View scanner statistics"""
     try:
         # Get client info
         client = get_client_by_user_id(user['user_id'])
@@ -620,248 +497,24 @@ def scanner_stats(user, scanner_id):
             flash('Scanner not found', 'danger')
             return redirect(url_for('client.scanners'))
         
-        # Get comprehensive dashboard data for enhanced statistics
-        dashboard_data = get_client_dashboard_data(client['id'])
+        # Get scan statistics
+        stats = get_scanner_stats(scanner_id)
         
-        # Get scanner-specific statistics
-        scanner_stats = get_scanner_stats(scanner_id)
-        
-        # Enhanced statistics with dashboard data
-        try:
-            from client_database_manager import get_client_scan_statistics, get_client_scan_reports
-            
-            # Get all client scans for more detailed analysis
-            all_scans, _ = get_client_scan_reports(client['id'], page=1, per_page=100)
-            
-            # Filter scans for this specific scanner
-            scanner_scans = []
-            if all_scans:
-                scanner_uid = scanner.get('scanner_id', '')
-                scanner_scans = [scan for scan in all_scans if scan.get('scanner_id') == scanner_uid or scan.get('scanner_name') == scanner.get('name')]
-            
-            # Calculate enhanced statistics
-            statistics = {
-                'total_scans': len(scanner_scans),
-                'unique_companies': len(set(scan.get('lead_company', '').strip() for scan in scanner_scans if scan.get('lead_company', '').strip())),
-                'avg_security_score': round(sum(scan.get('security_score', 0) for scan in scanner_scans) / len(scanner_scans)) if scanner_scans else 0,
-                'conversion_rate': round((len([s for s in scanner_scans if s.get('lead_email')]) / len(scanner_scans)) * 100) if scanner_scans else 0,
-                
-                # Monthly trends
-                'monthly_scans': {},
-                
-                # Risk distribution
-                'risk_distribution': {'Low': 0, 'Medium': 0, 'High': 0},
-                
-                # Company sizes
-                'company_sizes': {},
-                
-                # Top targets
-                'top_targets': []
-            }
-            
-            # Calculate monthly trends
-            from datetime import datetime, timedelta
-            import calendar
-            for i in range(6):
-                month_date = datetime.now() - timedelta(days=i*30)
-                month_key = month_date.strftime('%Y-%m')
-                month_name = calendar.month_abbr[month_date.month]
-                statistics['monthly_scans'][month_name] = len([
-                    scan for scan in scanner_scans 
-                    if scan.get('timestamp', '').startswith(month_key)
-                ])
-            
-            # Calculate risk distribution
-            for scan in scanner_scans:
-                risk = scan.get('risk_level', 'Medium')
-                if risk in statistics['risk_distribution']:
-                    statistics['risk_distribution'][risk] += 1
-                else:
-                    statistics['risk_distribution']['Medium'] += 1
-            
-            # Calculate company sizes
-            for scan in scanner_scans:
-                size = scan.get('company_size', 'Unknown')
-                statistics['company_sizes'][size] = statistics['company_sizes'].get(size, 0) + 1
-            
-            # Calculate top targets
-            target_counts = {}
-            for scan in scanner_scans:
-                target = scan.get('target_domain', scan.get('target_url', ''))
-                if target:
-                    target_counts[target] = target_counts.get(target, 0) + 1
-            
-            statistics['top_targets'] = sorted(target_counts.items(), key=lambda x: x[1], reverse=True)[:10]
-            
-            # Recent scans (last 20)
-            recent_scans = sorted(scanner_scans, key=lambda x: x.get('timestamp', ''), reverse=True)[:20]
-            
-        except Exception as e:
-            logger.error(f"Error getting enhanced statistics: {e}")
-            # Fallback to basic statistics
-            statistics = {
-                'total_scans': scanner_stats.get('total_scans', 0),
-                'unique_companies': 0,
-                'avg_security_score': 75,
-                'conversion_rate': 0,
-                'monthly_scans': {},
-                'risk_distribution': {'Low': 0, 'Medium': 0, 'High': 0},
-                'company_sizes': {},
-                'top_targets': []
-            }
-            recent_scans = []
+        # Get scan history for chart data
+        scan_history = get_scan_history_by_client_id(client['id'])
         
         return render_template(
             'client/scanner-stats.html',
             user=user,
             client=client,
             scanner=scanner,
-            statistics=statistics,
-            recent_scans=recent_scans,
-            dashboard_data=dashboard_data
+            stats=stats,
+            scan_history=scan_history
         )
     except Exception as e:
         logger.error(f"Error displaying scanner stats: {str(e)}")
         flash('An error occurred while loading scanner statistics', 'danger')
         return redirect(url_for('client.scanners'))
-
-@client_bp.route('/statistics')
-@client_required
-def client_statistics(user):
-    """View comprehensive client statistics across all scanners"""
-    try:
-        # Get client info
-        client = get_client_by_user_id(user['user_id'])
-        
-        if not client:
-            flash('Please complete your client profile', 'info')
-            return redirect(url_for('auth.complete_profile'))
-        
-        # Get comprehensive dashboard data
-        dashboard_data = get_client_dashboard_data(client['id'])
-        
-        if not dashboard_data:
-            flash('Unable to load statistics data', 'warning')
-            return redirect(url_for('client.dashboard'))
-        
-        # Enhanced statistics with all client data
-        try:
-            from client_database_manager import get_client_scan_statistics, get_client_scan_reports
-            
-            # Get all client scans for comprehensive analysis
-            all_scans, total_pages = get_client_scan_reports(client['id'], page=1, per_page=500)
-            
-            if not all_scans:
-                all_scans = []
-            
-            # Calculate comprehensive statistics
-            statistics = {
-                'total_scans': len(all_scans),
-                'total_scanners': len(dashboard_data['scanners']),
-                'unique_companies': len(set(scan.get('lead_company', '').strip() for scan in all_scans if scan.get('lead_company', '').strip())),
-                'avg_security_score': round(sum(scan.get('security_score', 0) for scan in all_scans) / len(all_scans)) if all_scans else 0,
-                'conversion_rate': round((len([s for s in all_scans if s.get('lead_email')]) / len(all_scans)) * 100) if all_scans else 0,
-                'total_leads': len([s for s in all_scans if s.get('lead_email') or s.get('lead_name')]),
-                
-                # Monthly trends (last 12 months)
-                'monthly_scans': {},
-                
-                # Risk distribution
-                'risk_distribution': {'Low': 0, 'Medium': 0, 'High': 0},
-                
-                # Company sizes
-                'company_sizes': {},
-                
-                # Top targets
-                'top_targets': [],
-                
-                # Scanner performance
-                'scanner_performance': {},
-                
-                # Lead sources
-                'lead_sources': {}
-            }
-            
-            # Calculate monthly trends (12 months)
-            from datetime import datetime, timedelta
-            import calendar
-            for i in range(12):
-                month_date = datetime.now() - timedelta(days=i*30)
-                month_key = month_date.strftime('%Y-%m')
-                month_name = month_date.strftime('%b %Y')
-                statistics['monthly_scans'][month_name] = len([
-                    scan for scan in all_scans 
-                    if scan.get('timestamp', '').startswith(month_key)
-                ])
-            
-            # Calculate risk distribution
-            for scan in all_scans:
-                risk = scan.get('risk_level', 'Medium')
-                if risk in statistics['risk_distribution']:
-                    statistics['risk_distribution'][risk] += 1
-                else:
-                    statistics['risk_distribution']['Medium'] += 1
-            
-            # Calculate company sizes
-            for scan in all_scans:
-                size = scan.get('company_size', 'Unknown')
-                statistics['company_sizes'][size] = statistics['company_sizes'].get(size, 0) + 1
-            
-            # Calculate top targets
-            target_counts = {}
-            for scan in all_scans:
-                target = scan.get('target_domain', scan.get('target_url', ''))
-                if target:
-                    target_counts[target] = target_counts.get(target, 0) + 1
-            
-            statistics['top_targets'] = sorted(target_counts.items(), key=lambda x: x[1], reverse=True)[:15]
-            
-            # Calculate scanner performance
-            scanner_counts = {}
-            for scan in all_scans:
-                scanner_name = scan.get('scanner_name', 'Unknown')
-                scanner_counts[scanner_name] = scanner_counts.get(scanner_name, 0) + 1
-            
-            statistics['scanner_performance'] = sorted(scanner_counts.items(), key=lambda x: x[1], reverse=True)
-            
-            # Recent high-value scans (last 50 with lead data)
-            recent_scans = [
-                scan for scan in sorted(all_scans, key=lambda x: x.get('timestamp', ''), reverse=True)[:50]
-                if scan.get('lead_email') or scan.get('lead_name')
-            ]
-            
-        except Exception as e:
-            logger.error(f"Error getting comprehensive statistics: {e}")
-            # Fallback to dashboard data
-            statistics = {
-                'total_scans': dashboard_data['stats'].get('total_scans', 0),
-                'total_scanners': dashboard_data['stats'].get('scanners_count', 0),
-                'unique_companies': 0,
-                'avg_security_score': dashboard_data['stats'].get('avg_security_score', 75),
-                'conversion_rate': 0,
-                'total_leads': 0,
-                'monthly_scans': {},
-                'risk_distribution': {'Low': 0, 'Medium': 0, 'High': 0},
-                'company_sizes': {},
-                'top_targets': [],
-                'scanner_performance': {},
-                'lead_sources': {}
-            }
-            recent_scans = dashboard_data['scan_history'][:20]
-        
-        return render_template(
-            'client/client-statistics.html',
-            user=user,
-            client=client,
-            statistics=statistics,
-            recent_scans=recent_scans,
-            dashboard_data=dashboard_data
-        )
-        
-    except Exception as e:
-        logger.error(f"Error displaying client statistics: {str(e)}")
-        flash('An error occurred while loading statistics', 'danger')
-        return redirect(url_for('client.dashboard'))
 
 @client_bp.route('/scanners/<int:scanner_id>/regenerate-api-key', methods=['POST'])
 @client_required
@@ -1245,6 +898,179 @@ def scanner_create(user):
     except Exception as e:
         logger.error(f"Error creating scanner: {str(e)}")
         flash('An error occurred while creating the scanner', 'danger')
+
+# =============================================================================
+# SCANNER MANAGEMENT ROUTES - View Details, Edit, Statistics
+# =============================================================================
+
+@client_bp.route('/scanners/<int:scanner_id>/view')
+@client_required
+def scanner_view_details(user, scanner_id):
+    """View detailed information about a specific scanner"""
+    try:
+        # Get client info
+        client = get_client_by_user_id(user['user_id'])
+        if not client:
+            flash('Please complete your profile first', 'warning')
+            return redirect(url_for('client.profile'))
+        
+        # Get scanner details
+        from scanner_db_functions import get_scanner_by_id
+        scanner = get_scanner_by_id(scanner_id)
+        
+        if not scanner:
+            flash('Scanner not found', 'danger')
+            return redirect(url_for('client.scanners'))
+        
+        # Verify ownership
+        if scanner.get('client_id') != client['id']:
+            flash('You do not have permission to view this scanner', 'danger')
+            return redirect(url_for('client.scanners'))
+        
+        # Get scanner usage statistics
+        from client_db import get_scanner_stats
+        stats = get_scanner_stats(scanner_id)
+        
+        # Get recent scans for this scanner
+        from client_db import get_client_dashboard_data
+        dashboard_data = get_client_dashboard_data(client['id'])
+        recent_scans = []
+        
+        if dashboard_data and dashboard_data.get('scan_history'):
+            # Filter scans for this specific scanner
+            for scan in dashboard_data['scan_history']:
+                if scan.get('scanner_id') == scanner_id or scan.get('scanner_name') == scanner.get('name'):
+                    recent_scans.append(scan)
+        
+        # Get deployment information
+        scanner_url = f"/scan?scanner_id={scanner_id}"
+        embed_code = f'''<iframe src="{request.host_url}scan?scanner_id={scanner_id}&embed=1" 
+                         width="100%" height="600" frameborder="0"></iframe>'''
+        api_endpoint = f"{request.host_url}api/scan"
+        
+        return render_template('client/scanner-view.html',
+            user=user,
+            client=client,
+            scanner=scanner,
+            stats=stats,
+            recent_scans=recent_scans[:10],  # Show last 10 scans
+            scanner_url=scanner_url,
+            embed_code=embed_code,
+            api_endpoint=api_endpoint
+        )
+        
+    except Exception as e:
+        logger.error(f"Error viewing scanner details: {str(e)}")
+        flash('An error occurred while loading scanner details', 'danger')
+        return redirect(url_for('client.scanners'))
+
+
+@client_bp.route('/scanners/<int:scanner_id>/stats')
+@client_required
+def scanner_statistics(user, scanner_id):
+    """View detailed statistics for a specific scanner"""
+    try:
+        # Get client info
+        client = get_client_by_user_id(user['user_id'])
+        if not client:
+            flash('Please complete your profile first', 'warning')
+            return redirect(url_for('client.profile'))
+        
+        # Get scanner details
+        from scanner_db_functions import get_scanner_by_id
+        scanner = get_scanner_by_id(scanner_id)
+        
+        if not scanner:
+            flash('Scanner not found', 'danger')
+            return redirect(url_for('client.scanners'))
+        
+        # Verify ownership
+        if scanner.get('client_id') != client['id']:
+            flash('You do not have permission to view statistics for this scanner', 'danger')
+            return redirect(url_for('client.scanners'))
+        
+        # Get comprehensive statistics
+        from client_db import get_client_dashboard_data
+        dashboard_data = get_client_dashboard_data(client['id'])
+        
+        # Filter data for this specific scanner
+        scanner_scans = []
+        total_scans = 0
+        total_score = 0
+        risk_distribution = {'Low': 0, 'Medium': 0, 'High': 0}
+        monthly_scans = {}
+        lead_sources = {}
+        company_sizes = {}
+        
+        if dashboard_data and dashboard_data.get('scan_history'):
+            for scan in dashboard_data['scan_history']:
+                if scan.get('scanner_id') == scanner_id or scan.get('scanner_name') == scanner.get('name'):
+                    scanner_scans.append(scan)
+                    total_scans += 1
+                    
+                    # Calculate statistics
+                    score = scan.get('security_score', 0)
+                    if score:
+                        total_score += score
+                    
+                    # Risk distribution
+                    risk = scan.get('risk_level', 'Medium')
+                    risk_distribution[risk] = risk_distribution.get(risk, 0) + 1
+                    
+                    # Monthly distribution
+                    timestamp = scan.get('timestamp', '')
+                    if timestamp:
+                        month = timestamp[:7]  # YYYY-MM
+                        monthly_scans[month] = monthly_scans.get(month, 0) + 1
+                    
+                    # Lead sources (company domains)
+                    target = scan.get('target', '')
+                    if target:
+                        lead_sources[target] = lead_sources.get(target, 0) + 1
+                    
+                    # Company sizes
+                    company_size = scan.get('company_size', 'Unknown')
+                    company_sizes[company_size] = company_sizes.get(company_size, 0) + 1
+        
+        # Calculate averages and trends
+        avg_security_score = (total_score / total_scans) if total_scans > 0 else 0
+        
+        # Get recent 30 days activity
+        from datetime import datetime, timedelta
+        thirty_days_ago = (datetime.now() - timedelta(days=30)).isoformat()
+        recent_scans = [s for s in scanner_scans if s.get('timestamp', '') > thirty_days_ago]
+        
+        # Prepare chart data
+        monthly_labels = sorted(monthly_scans.keys())[-6:]  # Last 6 months
+        monthly_values = [monthly_scans.get(month, 0) for month in monthly_labels]
+        
+        # Top performing targets
+        top_targets = sorted(lead_sources.items(), key=lambda x: x[1], reverse=True)[:5]
+        
+        statistics = {
+            'total_scans': total_scans,
+            'avg_security_score': round(avg_security_score, 1),
+            'recent_scans_30d': len(recent_scans),
+            'risk_distribution': risk_distribution,
+            'monthly_scans': dict(zip(monthly_labels, monthly_values)),
+            'top_targets': top_targets,
+            'company_sizes': company_sizes,
+            'unique_companies': len(set(s.get('lead_company', '') for s in scanner_scans if s.get('lead_company'))),
+            'conversion_rate': round((len([s for s in scanner_scans if s.get('lead_email')]) / total_scans * 100), 1) if total_scans > 0 else 0
+        }
+        
+        return render_template('client/scanner-stats.html',
+            user=user,
+            client=client,
+            scanner=scanner,
+            statistics=statistics,
+            recent_scans=scanner_scans[:20]  # Show last 20 scans
+        )
+        
+    except Exception as e:
+        logger.error(f"Error viewing scanner statistics: {str(e)}")
+        flash('An error occurred while loading scanner statistics', 'danger')
+        return redirect(url_for('client.scanners'))
 
 @client_bp.route('/debug-dashboard')
 @client_required

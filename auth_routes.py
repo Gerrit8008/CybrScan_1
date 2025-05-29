@@ -1,10 +1,11 @@
-from flask import Blueprint, render_template, request, redirect, url_for, flash, session
-from client_db import CLIENT_DB_PATH, verify_session
+from flask import Blueprint, render_template, request, redirect, url_for, flash, session, jsonify
+from client_db import verify_session
 from fix_auth import (
     authenticate_user_wrapper as authenticate_user,
     logout_user, 
     create_user
 )
+from auth_utils import register_client
 import os
 import logging
 from datetime import datetime
@@ -17,52 +18,7 @@ logger = logging.getLogger(__name__)
 # Create blueprint for authentication routes
 auth_bp = Blueprint('auth', __name__, url_prefix='/auth')
 
-# Initialize tables when the blueprint is registered
-def init_user_tables():
-    """Initialize user tables"""
-    try:
-        # Your implementation here - or use a minimal version:
-        import sqlite3
-        conn = sqlite3.connect(CLIENT_DB_PATH)
-        cursor = conn.cursor()
-        
-        # Create users table if not exists
-        cursor.execute('''
-        CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT NOT NULL UNIQUE,
-            email TEXT NOT NULL UNIQUE,
-            password_hash TEXT NOT NULL,
-            salt TEXT NOT NULL,
-            role TEXT DEFAULT 'client',
-            full_name TEXT,
-            created_at TEXT,
-            last_login TEXT,
-            active INTEGER DEFAULT 1
-        )
-        ''')
-        
-        # Create sessions table if not exists
-        cursor.execute('''
-        CREATE TABLE IF NOT EXISTS sessions (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL,
-            session_token TEXT UNIQUE NOT NULL,
-            created_at TEXT,
-            expires_at TEXT,
-            ip_address TEXT,
-            user_agent TEXT,
-            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-        )
-        ''')
-        
-        conn.commit()
-        conn.close()
-        logging.info("User tables initialized successfully")
-        return True
-    except Exception as e:
-        logging.error(f"Error initializing user tables: {e}")
-        return False
+# Database initialization is handled by the main app
 
 # Middleware to require login
 def login_required(f):
@@ -136,8 +92,8 @@ def register():
                                  email=email,
                                  full_name=full_name)
         
-        # Create user
-        result = create_user(username, email, password, full_name)
+        # Create user with client role
+        result = create_user(username, email, password, 'client', full_name)
         
         if result['status'] == 'success':
             # Automatically create a client profile for the user
@@ -204,9 +160,13 @@ def login():
             if result['role'] == 'admin':
                 return redirect(url_for('admin.dashboard'))
             else:
-                # For clients, always go to client dashboard 
-                # This bypasses any complete_profile redirection
-                return redirect(url_for('client.dashboard'))
+                # For clients, try client dashboard, fallback to admin if not available
+                try:
+                    return redirect(url_for('client.dashboard'))
+                except Exception as e:
+                    logger.warning(f"Client dashboard not available, redirecting to admin: {e}")
+                    # Fallback to a working route
+                    return redirect('/admin/dashboard')
         else:
             flash(result['message'], 'danger')
             return render_template('auth/login.html')
@@ -223,8 +183,7 @@ def logout():
     flash('You have been logged out', 'success')
     return redirect(url_for('auth.login'))
 
-# Initialize tables
-init_user_tables()
+# Database initialization is handled by the main app
 
 # User profile route
 @auth_bp.route('/profile')
@@ -291,38 +250,58 @@ def get_all_users(page=1, per_page=10, search=None, role=None):
     }
 
 def get_user_by_id(user_id):
-    """Simple placeholder function"""
-    return {"status": "error", "message": "User not found"}
+    """Get user by ID using client_db"""
+    try:
+        from client_db import get_db_connection
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM users WHERE id = ? AND active = 1', (user_id,))
+        user = cursor.fetchone()
+        conn.close()
+        
+        if user:
+            # Convert to dict if it's a Row object
+            if hasattr(user, 'keys'):
+                user_dict = dict(user)
+            else:
+                # Assume it's a tuple and create dict manually
+                columns = ['id', 'username', 'email', 'password_hash', 'salt', 'role', 'full_name', 'created_at', 'last_login', 'active']
+                user_dict = dict(zip(columns, user))
+            
+            # Remove sensitive data
+            user_dict.pop('password_hash', None)
+            user_dict.pop('salt', None)
+            
+            return {"status": "success", "user": user_dict}
+        else:
+            return {"status": "error", "message": "User not found"}
+    except Exception as e:
+        logging.error(f"Error getting user by ID: {e}")
+        return {"status": "error", "message": str(e)}
 
 def update_user(user_id, user_data, admin_id):
     """Update user information"""
-    conn = get_db_connection()
     try:
-        # Validate user data
-        if not validate_user_data(user_data):
-            return {"status": "error", "message": "Invalid user data"}
-            
-        # Update user record
+        from client_db import get_db_connection
+        conn = get_db_connection()
         cursor = conn.cursor()
+        
+        # Update user record
         cursor.execute("""
             UPDATE users 
-            SET full_name = ?, email = ?, updated_at = ?, updated_by = ?
+            SET full_name = ?, email = ?
             WHERE id = ?
         """, (
-            user_data['full_name'],
-            user_data['email'],
-            datetime.now().isoformat(),
-            admin_id,
+            user_data.get('full_name', ''),
+            user_data.get('email', ''),
             user_id
         ))
         conn.commit()
+        conn.close()
         
         return {"status": "success", "message": "User updated successfully"}
     except Exception as e:
-        conn.rollback()
         return {"status": "error", "message": str(e)}
-    finally:
-        conn.close()
 
 def delete_user(user_id, admin_id):
     """Simple placeholder function"""
@@ -340,18 +319,7 @@ def get_login_stats():
         }
     }
 
-# NOW call init_user_tables after it's defined
-init_user_tables()
-
-# Initialize tables when the blueprint is registered
-@auth_bp.before_app_first_request
-def initialize_tables():
-    """Initialize user tables before first request"""
-    try:
-        init_user_tables()
-        logging.info("User tables initialized successfully")
-    except Exception as e:
-        logging.error(f"Error initializing user tables: {str(e)}")
+# Database initialization is handled by the main app
     
 # User management routes (admin only)
 @auth_bp.route('/admin/users')
@@ -418,7 +386,7 @@ def admin_create_user(user):
                                  })
         
         # Create user
-        result = create_user(username, email, password, full_name, role)
+        result = create_user(username, email, password, role, full_name)
         
         if result['status'] == 'success':
             flash('User created successfully', 'success')
@@ -517,77 +485,7 @@ def admin_delete_user(user, user_id):
     
     return redirect(url_for('auth.admin_users'))
 
-# API endpoint for checking username availability
-@auth_bp.route('/api/check-username', methods=['POST'])
-def check_username():
-    """Check if a username is available"""
-    username = request.json.get('username')
-    
-    if not username:
-        return jsonify({'available': False, 'message': 'Username is required'})
-    
-    # Connect to database
-    from client_db import CLIENT_DB_PATH
-    import sqlite3
-    
-    conn = sqlite3.connect(CLIENT_DB_PATH)
-    cursor = conn.cursor()
-    
-    # Check if username exists
-    cursor.execute('SELECT id FROM users WHERE username = ?', (username,))
-    existing_user = cursor.fetchone()
-    
-    conn.close()
-    
-    if existing_user:
-        return jsonify({'available': False, 'message': 'Username is already taken'})
-    
-    return jsonify({'available': True, 'message': 'Username is available'})
-
-# API endpoint for checking email availability
-@auth_bp.route('/api/check-email', methods=['POST'])
-def check_email():
-    """Check if an email is available"""
-    email = request.json.get('email')
-    
-    if not email:
-        return jsonify({'available': False, 'message': 'Email is required'})
-    
-    # Connect to database
-    from client_db import CLIENT_DB_PATH
-    import sqlite3
-    
-    conn = sqlite3.connect(CLIENT_DB_PATH)
-    cursor = conn.cursor()
-    
-    # Check if email exists
-    cursor.execute('SELECT id FROM users WHERE email = ?', (email,))
-    existing_user = cursor.fetchone()
-    
-    conn.close()
-    
-    if existing_user:
-        return jsonify({'available': False, 'message': 'Email is already registered'})
-    
-    return jsonify({'available': True, 'message': 'Email is available'})
-
-# API endpoint for getting login statistics (admin only)
-@auth_bp.route('/api/login-stats')
-@admin_required
-def api_login_stats(user):
-    """Get login statistics for admin dashboard"""
-    stats = get_login_stats()
-    
-    if stats['status'] != 'success':
-        return jsonify({
-            'status': 'error',
-            'message': stats.get('message', 'Failed to retrieve login statistics')
-        }), 500
-    
-    return jsonify({
-        'status': 'success',
-        'data': stats['stats']
-    })
+# API endpoints moved to api.py to avoid route conflicts
 
 @auth_bp.route('/reset-password', methods=['GET', 'POST'])
 def reset_password_request():
