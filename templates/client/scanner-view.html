@@ -5,6 +5,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Scanner Details - Scanner Platform</title>
+    
+    <!-- Favicon -->
+    <link rel="icon" type="image/png" sizes="32x32" href="/static/images/favicon.png.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/static/images/favicon.png.png">
+    <link rel="shortcut icon" href="/static/images/favicon.png.png">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.1/font/bootstrap-icons.css">
     <link rel="stylesheet" href="/static/css/styles.css">
@@ -346,13 +351,13 @@
                                 <h5>Colors</h5>
                                 <div class="mb-3">
                                     <strong>Primary Color:</strong>
-                                    <div class="color-box" style="background-color: {{ scanner.primary_color|default('#FF6900') }};"></div>
-                                    <code>{{ scanner.primary_color|default('#FF6900') }}</code>
+                                    <div class="color-box" style="background-color: {{ scanner.primary_color|default('#02054c') }};"></div>
+                                    <code>{{ scanner.primary_color|default('#02054c') }}</code>
                                 </div>
                                 <div class="mb-3">
                                     <strong>Secondary Color:</strong>
-                                    <div class="color-box" style="background-color: {{ scanner.secondary_color|default('#808588') }};"></div>
-                                    <code>{{ scanner.secondary_color|default('#808588') }}</code>
+                                    <div class="color-box" style="background-color: {{ scanner.secondary_color|default('#35a310') }};"></div>
+                                    <code>{{ scanner.secondary_color|default('#35a310') }}</code>
                                 </div>
                             </div>
                             
@@ -420,7 +425,7 @@
    target="_blank" 
    style="display: inline-block; 
           padding: 10px 20px; 
-          background-color: {{ scanner.primary_color|default('#FF6900') }}; 
+          background-color: {{ scanner.primary_color|default('#02054c') }}; 
           color: white; 
           text-decoration: none; 
           border-radius: 5px; 
