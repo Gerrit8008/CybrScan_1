@@ -492,6 +492,43 @@ def delete_scanner(user, scanner_id):
 
 # Add a route for the main customize page (without scanner_id)
 @scanner_bp.route('/customize')
-def customize():
+@client_required
+def customize(user):
     """Main scanner creation/customization page"""
+    # Check for subscription limits
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Get client information
+        cursor.execute('''
+            SELECT * FROM clients 
+            WHERE user_id = ? AND active = 1
+        ''', (user['id'],))
+        user_client = cursor.fetchone()
+        
+        if not user_client:
+            flash('Client profile not found. Please complete your profile first.', 'warning')
+            return redirect(url_for('client.settings'))
+        
+        user_client = dict(user_client)
+        
+        # Import subscription constants
+        from subscription_constants import get_client_scanner_limit
+        
+        # Get current scanner count
+        cursor.execute('SELECT COUNT(*) FROM scanners WHERE client_id = ? AND status != "deleted"', (user_client['id'],))
+        current_scanners = cursor.fetchone()[0]
+        conn.close()
+        
+        # Get scanner limit based on subscription level
+        scanner_limit = get_client_scanner_limit(user_client)
+        
+        # Check if client has reached their scanner limit
+        if current_scanners >= scanner_limit:
+            flash(f'Scanner limit reached ({current_scanners}/{scanner_limit}). Please upgrade your subscription to create more scanners.', 'warning')
+    except Exception as e:
+        logging.error(f"Error checking subscription limits: {e}")
+    
+    # Redirect to the scanner creation form
     return redirect(url_for('scanner.create_scanner_form'))
