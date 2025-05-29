@@ -54,6 +54,32 @@
                     </div>
                 </div>
                 
+                <!-- Subscription Info Alert -->
+                {% if current_scanners is defined and scanner_limit is defined %}
+                <div class="alert alert-info alert-dismissible fade show" role="alert">
+                    <h5><i class="bi bi-info-circle me-2"></i>Scanner Usage</h5>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <strong>Current Plan:</strong> 
+                            {{ client.subscription_level|title if client.subscription_level else 'Basic' }}
+                        </div>
+                        <div class="col-md-6">
+                            <strong>Scanners:</strong> {{ current_scanners }} / {{ scanner_limit }}
+                            {% if current_scanners >= scanner_limit %}
+                            <span class="badge bg-warning ms-2">Limit Reached</span>
+                            {% endif %}
+                        </div>
+                    </div>
+                    
+                    {% if current_scanners >= scanner_limit %}
+                    <hr>
+                    <p class="mb-0">You've reached your scanner limit. Please upgrade your subscription to create more scanners.</p>
+                    {% endif %}
+                    
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>
+                {% endif %}
+                
                 <!-- Flash Messages -->
                 {% with messages = get_flashed_messages(with_categories=true) %}
                     {% if messages %}
@@ -212,7 +238,7 @@
                                         <a href="{{ url_for('client.scanners') }}" class="btn btn-outline-secondary">
                                             <i class="bi bi-arrow-left"></i> Cancel
                                         </a>
-                                        <button type="submit" class="btn btn-primary">
+                                        <button type="submit" class="btn btn-primary" {% if current_scanners is defined and scanner_limit is defined and current_scanners >= scanner_limit %}disabled{% endif %}>
                                             <i class="bi bi-plus-circle"></i> Create Scanner
                                         </button>
                                     </div>
