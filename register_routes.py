@@ -8,7 +8,7 @@ def register_all_routes(app: Flask):
     try:
         # Import all blueprints
         from admin import admin_bp
-        from auth import auth_bp
+        from auth_routes import auth_bp
         
         # Register the basic blueprints first
         app.register_blueprint(auth_bp)
